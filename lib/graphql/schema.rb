@@ -62,8 +62,8 @@ module GraphQL
       :query_analyzers, :middleware
 
     DIRECTIVES = [
-      GraphQL::Directive::SkipDirective,
       GraphQL::Directive::IncludeDirective,
+      GraphQL::Directive::SkipDirective,
       GraphQL::Directive::DeprecatedDirective,
       GraphQL::Directive::DeferDirective,
       GraphQL::Directive::StreamDirective,
