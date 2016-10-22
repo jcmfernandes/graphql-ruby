@@ -82,8 +82,9 @@ module GraphQL
       # one of the defined fields is needed.
       # @return [void]
       def define(**kwargs, &block)
-        # make sure the previous definition_proc was executed:
-        ensure_defined
+        if @definition_proc
+          raise("This instance has already been defined; a second definition is not supported")
+        end
 
         @definition_proc = ->(obj) {
           kwargs.each do |keyword, value|
@@ -142,23 +143,6 @@ module GraphQL
           @own_dictionary = own_dictionary.merge(new_assignments)
         end
 
-        # Define a reader and writer for each of `attr_names` which
-        # ensures that the definition block was called before accessing it.
-        def lazy_defined_attr_accessor(*attr_names)
-          attr_names.each do |attr_name|
-            ivar_name = :"@#{attr_name}"
-            define_method(attr_name) do
-              ensure_defined
-              instance_variable_get(ivar_name)
-            end
-
-            define_method("#{attr_name}=") do |new_value|
-              ensure_defined
-              instance_variable_set(ivar_name, new_value)
-            end
-          end
-        end
-
         # @return [Hash] combined definitions for self and ancestors
         def dictionary
           if superclass.respond_to?(:dictionary)
@@ -171,6 +155,12 @@ module GraphQL
         # @return [Hash] definitions for this class only
         def own_dictionary
           @own_dictionary ||= {}
+        end
+
+        # The methods defined in this block will ensure that the `.define`
+        # block has been executed before they run.
+        def lazy_methods(&lazy_definition)
+          GraphQL::Define::LazyMethodProxy.create(self, &lazy_definition)
         end
       end
 

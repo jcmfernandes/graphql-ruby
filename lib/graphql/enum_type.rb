@@ -76,47 +76,45 @@ module GraphQL
       @values_by_value[enum_value.value] = enum_value
     end
 
-    # @return [Hash<String => EnumValue>] `{name => value}` pairs contained in this type
-    def values
-      ensure_defined
-      @values_by_name
-    end
-
     def kind
       GraphQL::TypeKinds::ENUM
     end
 
-    def validate_non_null_input(value_name)
-      ensure_defined
-      result = GraphQL::Query::InputValidationResult.new
-
-      if !@values_by_name.key?(value_name)
-        result.add_problem("Expected #{JSON.generate(value_name, quirks_mode: true)} to be one of: #{@values_by_name.keys.join(', ')}")
+    lazy_methods do
+      # @return [Hash<String => EnumValue>] `{name => value}` pairs contained in this type
+      def values
+        @values_by_name
       end
 
-      result
-    end
+      def validate_non_null_input(value_name)
+        result = GraphQL::Query::InputValidationResult.new
 
-    # Get the underlying value for this enum value
-    #
-    # @example get episode value from Enum
-    #   episode = EpisodeEnum.coerce("NEWHOPE")
-    #   episode # => 6
-    #
-    # @param value_name [String] the string representation of this enum value
-    # @return [Object] the underlying value for this enum value
-    def coerce_non_null_input(value_name)
-      ensure_defined
-      if @values_by_name.key?(value_name)
-        @values_by_name.fetch(value_name).value
-      else
-        nil
+        if !@values_by_name.key?(value_name)
+          result.add_problem("Expected #{JSON.generate(value_name, quirks_mode: true)} to be one of: #{@values_by_name.keys.join(', ')}")
+        end
+
+        result
       end
-    end
 
-    def coerce_result(value)
-      ensure_defined
-      @values_by_value.fetch(value).name
+      # Get the underlying value for this enum value
+      #
+      # @example get episode value from Enum
+      #   episode = EpisodeEnum.coerce("NEWHOPE")
+      #   episode # => 6
+      #
+      # @param value_name [String] the string representation of this enum value
+      # @return [Object] the underlying value for this enum value
+      def coerce_non_null_input(value_name)
+        if @values_by_name.key?(value_name)
+          @values_by_name.fetch(value_name).value
+        else
+          nil
+        end
+      end
+
+      def coerce_result(value)
+        @values_by_value.fetch(value).name
+      end
     end
 
     def to_s

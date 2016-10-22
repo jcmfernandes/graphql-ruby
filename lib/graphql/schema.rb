@@ -54,13 +54,6 @@ module GraphQL
       middleware: ->(schema, middleware) { schema.middleware << middleware },
       rescue_from: ->(schema, err_class, &block) { schema.rescue_from(err_class, &block)}
 
-    lazy_defined_attr_accessor \
-      :query, :mutation, :subscription,
-      :query_execution_strategy, :mutation_execution_strategy, :subscription_execution_strategy,
-      :max_depth, :max_complexity,
-      :orphan_types,
-      :query_analyzers, :middleware
-
     DIRECTIVES = [GraphQL::Directive::IncludeDirective, GraphQL::Directive::SkipDirective, GraphQL::Directive::DeprecatedDirective]
     DYNAMIC_FIELDS = ["__type", "__typename", "__schema"]
 
@@ -97,16 +90,6 @@ module GraphQL
       @subscription_execution_strategy = GraphQL::Query::SerialExecution
     end
 
-    def rescue_from(*args, &block)
-      ensure_defined
-      rescue_middleware.rescue_from(*args, &block)
-    end
-
-    def remove_handler(*args, &block)
-      ensure_defined
-      rescue_middleware.remove_handler(*args, &block)
-    end
-
     def define(**kwargs, &block)
       super
       types
@@ -116,53 +99,12 @@ module GraphQL
       nil
     end
 
-    # @return [GraphQL::Schema::TypeMap] `{ name => type }` pairs of types in this schema
-    def types
-      @types ||= begin
-        ensure_defined
-        all_types = orphan_types + [query, mutation, subscription, GraphQL::Introspection::SchemaType]
-        GraphQL::Schema::ReduceTypes.reduce(all_types.compact)
-      end
-    end
-
     # Execute a query on itself.
     # See {Query#initialize} for arguments.
     # @return [Hash] query result, ready to be serialized as JSON
     def execute(*args)
       query_obj = GraphQL::Query.new(self, *args)
       query_obj.result
-    end
-
-    # Resolve field named `field_name` for type `parent_type`.
-    # Handles dynamic fields `__typename`, `__type` and `__schema`, too
-    def get_field(parent_type, field_name)
-      ensure_defined
-      defined_field = parent_type.get_field(field_name)
-      if defined_field
-        defined_field
-      elsif field_name == "__typename"
-        GraphQL::Introspection::TypenameField.create(parent_type)
-      elsif field_name == "__schema" && parent_type == query
-        GraphQL::Introspection::SchemaField.create(self)
-      elsif field_name == "__type" && parent_type == query
-        GraphQL::Introspection::TypeByNameField.create(self.types)
-      else
-        nil
-      end
-    end
-
-    def type_from_ast(ast_node)
-      ensure_defined
-      GraphQL::Schema::TypeExpression.build_type(self, ast_node)
-    end
-
-    # TODO: when `resolve_type` is schema level, can this be removed?
-    # @param type_defn [GraphQL::InterfaceType, GraphQL::UnionType] the type whose members you want to retrieve
-    # @return [Array<GraphQL::ObjectType>] types which belong to `type_defn` in this schema
-    def possible_types(type_defn)
-      ensure_defined
-      @interface_possible_types ||= GraphQL::Schema::PossibleTypes.new(self)
-      @interface_possible_types.possible_types(type_defn)
     end
 
     def root_type_for_operation(operation)
@@ -191,71 +133,117 @@ module GraphQL
       end
     end
 
-    # Determine the GraphQL type for a given object.
-    # This is required for unions and interfaces (include Relay's node interface)
-    # @param object [Any] An application object which GraphQL is currently resolving on
-    # @param ctx [GraphQL::Query::Context] The context for the current query
-    # @return [GraphQL::ObjectType] The type for exposing `object` in GraphQL
-    def resolve_type(object, ctx)
-      ensure_defined
-
-      if @resolve_type_proc.nil?
-        raise(NotImplementedError, "Can't determine GraphQL type for: #{object.inspect}, define `resolve_type (obj, ctx) -> { ... }` inside `Schema.define`.")
+    lazy_methods do
+      attr_accessor :query, :mutation, :subscription,
+        :query_execution_strategy, :mutation_execution_strategy, :subscription_execution_strategy,
+        :max_depth, :max_complexity,
+        :orphan_types,
+        :query_analyzers, :middleware
+      def rescue_from(*args, &block)
+        rescue_middleware.rescue_from(*args, &block)
       end
 
-      type_result = @resolve_type_proc.call(object, ctx)
-      if type_result.nil?
-        nil
-      elsif !type_result.is_a?(GraphQL::BaseType)
-        type_str = "#{type_result} (#{type_result.class.name})"
-        raise "resolve_type(#{object}) returned #{type_str}, but it should return a GraphQL type"
-      else
-        type_result
+      def remove_handler(*args, &block)
+        rescue_middleware.remove_handler(*args, &block)
       end
-    end
 
-    def resolve_type=(new_resolve_type_proc)
-      ensure_defined
-      @resolve_type_proc = new_resolve_type_proc
-    end
-
-    # Fetch an application object by its unique id
-    # @param id [String] A unique identifier, provided previously by this GraphQL schema
-    # @param ctx [GraphQL::Query::Context] The context for the current query
-    # @return [Any] The application object identified by `id`
-    def object_from_id(id, ctx)
-      ensure_defined
-      if @object_from_id_proc.nil?
-        raise(NotImplementedError, "Can't fetch an object for id \"#{id}\" because the schema's `object_from_id (id, ctx) -> { ... }` function is not defined")
-      else
-        @object_from_id_proc.call(id, ctx)
+      # @return [GraphQL::Schema::TypeMap] `{ name => type }` pairs of types in this schema
+      def types
+        @types ||= begin
+          all_types = orphan_types + [query, mutation, subscription, GraphQL::Introspection::SchemaType]
+          GraphQL::Schema::ReduceTypes.reduce(all_types.compact)
+        end
       end
-    end
 
-    # @param new_proc [#call] A new callable for fetching objects by ID
-    def object_from_id=(new_proc)
-      ensure_defined
-      @object_from_id_proc = new_proc
-    end
-
-    # Get a unique identifier from this object
-    # @param object [Any] An application object
-    # @param type [GraphQL::BaseType] The current type definition
-    # @param ctx [GraphQL::Query::Context] the context for the current query
-    # @return [String] a unique identifier for `object` which clients can use to refetch it
-    def id_from_object(object, type, ctx)
-      ensure_defined
-      if @id_from_object_proc.nil?
-        raise(NotImplementedError, "Can't generate an ID for #{object.inspect} of type #{type}, schema's `id_from_object` must be defined")
-      else
-        @id_from_object_proc.call(object, type, ctx)
+      # Resolve field named `field_name` for type `parent_type`.
+      # Handles dynamic fields `__typename`, `__type` and `__schema`, too
+      def get_field(parent_type, field_name)
+        defined_field = parent_type.get_field(field_name)
+        if defined_field
+          defined_field
+        elsif field_name == "__typename"
+          GraphQL::Introspection::TypenameField.create(parent_type)
+        elsif field_name == "__schema" && parent_type == query
+          GraphQL::Introspection::SchemaField.create(self)
+        elsif field_name == "__type" && parent_type == query
+          GraphQL::Introspection::TypeByNameField.create(self.types)
+        else
+          nil
+        end
       end
-    end
 
-    # @param new_proc [#call] A new callable for generating unique IDs
-    def id_from_object=(new_proc)
-      ensure_defined
-      @id_from_object_proc = new_proc
+      def type_from_ast(ast_node)
+        GraphQL::Schema::TypeExpression.build_type(self, ast_node)
+      end
+
+      # TODO: when `resolve_type` is schema level, can this be removed?
+      # @param type_defn [GraphQL::InterfaceType, GraphQL::UnionType] the type whose members you want to retrieve
+      # @return [Array<GraphQL::ObjectType>] types which belong to `type_defn` in this schema
+      def possible_types(type_defn)
+        @interface_possible_types ||= GraphQL::Schema::PossibleTypes.new(self)
+        @interface_possible_types.possible_types(type_defn)
+      end
+
+
+      # Determine the GraphQL type for a given object.
+      # This is required for unions and interfaces (include Relay's node interface)
+      # @param object [Any] An application object which GraphQL is currently resolving on
+      # @param ctx [GraphQL::Query::Context] The context for the current query
+      # @return [GraphQL::ObjectType] The type for exposing `object` in GraphQL
+      def resolve_type(object, ctx)
+        if @resolve_type_proc.nil?
+          raise(NotImplementedError, "Can't determine GraphQL type for: #{object.inspect}, define `resolve_type (obj, ctx) -> { ... }` inside `Schema.define`.")
+        end
+
+        type_result = @resolve_type_proc.call(object, ctx)
+        if type_result.nil?
+          nil
+        elsif !type_result.is_a?(GraphQL::BaseType)
+          type_str = "#{type_result} (#{type_result.class.name})"
+          raise "resolve_type(#{object}) returned #{type_str}, but it should return a GraphQL type"
+        else
+          type_result
+        end
+      end
+
+      def resolve_type=(new_resolve_type_proc)
+        @resolve_type_proc = new_resolve_type_proc
+      end
+
+      # Fetch an application object by its unique id
+      # @param id [String] A unique identifier, provided previously by this GraphQL schema
+      # @param ctx [GraphQL::Query::Context] The context for the current query
+      # @return [Any] The application object identified by `id`
+      def object_from_id(id, ctx)
+        if @object_from_id_proc.nil?
+          raise(NotImplementedError, "Can't fetch an object for id \"#{id}\" because the schema's `object_from_id (id, ctx) -> { ... }` function is not defined")
+        else
+          @object_from_id_proc.call(id, ctx)
+        end
+      end
+
+      # @param new_proc [#call] A new callable for fetching objects by ID
+      def object_from_id=(new_proc)
+        @object_from_id_proc = new_proc
+      end
+
+      # Get a unique identifier from this object
+      # @param object [Any] An application object
+      # @param type [GraphQL::BaseType] The current type definition
+      # @param ctx [GraphQL::Query::Context] the context for the current query
+      # @return [String] a unique identifier for `object` which clients can use to refetch it
+      def id_from_object(object, type, ctx)
+        if @id_from_object_proc.nil?
+          raise(NotImplementedError, "Can't generate an ID for #{object.inspect} of type #{type}, schema's `id_from_object` must be defined")
+        else
+          @id_from_object_proc.call(object, type, ctx)
+        end
+      end
+
+      # @param new_proc [#call] A new callable for generating unique IDs
+      def id_from_object=(new_proc)
+        @id_from_object_proc = new_proc
+      end
     end
 
     private

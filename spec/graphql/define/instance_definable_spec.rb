@@ -11,11 +11,13 @@ module Garden
 
   class Vegetable
     include GraphQL::Define::InstanceDefinable
-    lazy_defined_attr_accessor :name, :start_planting_on, :end_planting_on
     accepts_definitions :name, plant_between: DefinePlantBetween, color: GraphQL::Define.assign_metadata_key(:color)
 
-    # definition added later:
-    lazy_defined_attr_accessor :height
+    lazy_methods do
+      attr_accessor :name, :start_planting_on, :end_planting_on
+      # definition added later:
+      attr_accessor :height
+    end
   end
 end
 
@@ -59,17 +61,6 @@ describe GraphQL::Define::InstanceDefinable do
       assert_equal "Okra", okra.name
       assert_equal Date.new(2000, 5, 1), okra.start_planting_on
       assert_equal Date.new(2000, 7, 1), okra.end_planting_on
-    end
-  end
-
-  describe "#define" do
-    it "applies new definitions to an object" do
-      okra = Garden::Vegetable.define(name: "Okra", plant_between: Date.new(2000, 5, 1)..Date.new(2000, 7, 1))
-      assert_equal "Okra", okra.name
-      okra.define(name: "Gumbo")
-      assert_equal "Gumbo", okra.name
-      okra.define { name "Okra" }
-      assert_equal "Okra", okra.name
     end
   end
 

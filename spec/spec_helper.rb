@@ -8,7 +8,7 @@ require "benchmark"
 require "minitest/autorun"
 require "minitest/focus"
 require "minitest/reporters"
-Minitest::Reporters.use! Minitest::Reporters::SpecReporter.new
+Minitest::Reporters.use! Minitest::Reporters::DefaultReporter.new
 
 Minitest::Spec.make_my_diffs_pretty!
 
