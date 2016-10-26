@@ -52,6 +52,7 @@ module GraphQL
       :max_depth, :max_complexity,
       :orphan_types, :resolve_type,
       :object_from_id, :id_from_object,
+      instrument: -> (schema, type, instrumenter) { schema.instrumenters[type] << instrumenter },
       query_analyzer: ->(schema, analyzer) { schema.query_analyzers << analyzer },
       middleware: ->(schema, middleware) { schema.middleware << middleware },
       rescue_from: ->(schema, err_class, &block) { schema.rescue_from(err_class, &block)}
@@ -61,7 +62,7 @@ module GraphQL
       :query_execution_strategy, :mutation_execution_strategy, :subscription_execution_strategy,
       :max_depth, :max_complexity,
       :orphan_types,
-      :query_analyzers, :middleware
+      :query_analyzers, :middleware, :instrumenters
 
     DIRECTIVES = [GraphQL::Directive::IncludeDirective, GraphQL::Directive::SkipDirective, GraphQL::Directive::DeprecatedDirective]
     DYNAMIC_FIELDS = ["__type", "__typename", "__schema"]
@@ -85,6 +86,7 @@ module GraphQL
       @resolve_type_proc = nil
       @object_from_id_proc = nil
       @id_from_object_proc = nil
+      @instrumenters = Hash.new { |h, k| h[k] = [] }
       # Default to the built-in execution strategy:
       @query_execution_strategy = GraphQL::Query::SerialExecution
       @mutation_execution_strategy = GraphQL::Query::SerialExecution
@@ -105,10 +107,16 @@ module GraphQL
       super
       types
       @instrumented_field_map = InstrumentedFieldMap.new(self)
+      field_instrumenters = @instrumenters[:field]
       types.each do |type_name, type|
         if type.kind.fields?
           type.all_fields.each do |field_defn|
-            @instrumented_field_map.set(type.name, field_defn.name, field_defn)
+
+            instrumented_field_defn = field_instrumenters.reduce(field_defn) do |defn, inst|
+              inst.instrument(defn)
+            end
+
+            @instrumented_field_map.set(type.name, field_defn.name, instrumented_field_defn)
           end
         end
       end
