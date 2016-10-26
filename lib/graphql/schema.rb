@@ -95,7 +95,7 @@ module GraphQL
       @object_from_id_proc = nil
       @id_from_object_proc = nil
       # Default to the built-in execution strategy:
-      @query_execution_strategy = GraphQL::Execution::DeferredExecution
+      @query_execution_strategy = GraphQL::Query::SerialExecution
       @mutation_execution_strategy = GraphQL::Query::SerialExecution
       @subscription_execution_strategy = GraphQL::Query::SerialExecution
     end

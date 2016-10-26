@@ -16,6 +16,10 @@ Minitest::Spec.make_my_diffs_pretty!
 # to be shown.
 Minitest.backtrace_filter = Minitest::BacktraceFilter.new
 
+
+DEFAULT_EXEC_STRATEGY = ENV["GRAPHQL_EXEC_STRATEGY"] == "serial" ? GraphQL::Query::SerialExecution : GraphQL::Execution::DeferredExecution
+puts "Default execution strategy: #{DEFAULT_EXEC_STRATEGY.name}"
+
 # # Load support files
 Dir["#{File.dirname(__FILE__)}/support/**/*.rb"].each { |f| require f }
 
