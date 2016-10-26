@@ -46,6 +46,7 @@ module GraphQL
     include GraphQL::Define::InstanceDefinable
     accepts_definitions \
       :query, :mutation, :subscription,
+      :directives,
       :query_execution_strategy, :mutation_execution_strategy, :subscription_execution_strategy,
       :max_depth, :max_complexity,
       :orphan_types, :resolve_type,
@@ -61,13 +62,16 @@ module GraphQL
       :orphan_types,
       :query_analyzers, :middleware
 
-    DIRECTIVES = [
+    BUILT_IN_DIRECTIVES = [
       GraphQL::Directive::IncludeDirective,
       GraphQL::Directive::SkipDirective,
       GraphQL::Directive::DeprecatedDirective,
-      GraphQL::Directive::DeferDirective,
-      GraphQL::Directive::StreamDirective,
     ]
+
+    OPTIONAL_DIRECTIVES = {
+      "@defer" => GraphQL::Directive::DeferDirective,
+      "@stream" => GraphQL::Directive::StreamDirective,
+    }
 
     DYNAMIC_FIELDS = ["__type", "__typename", "__schema"]
 
@@ -83,7 +87,7 @@ module GraphQL
     # @param types [Array<GraphQL::BaseType>] additional types to include in this schema
     def initialize
       @orphan_types = []
-      @directives = DIRECTIVES.reduce({}) { |m, d| m[d.name] = d; m }
+      @directives = BUILT_IN_DIRECTIVES.reduce({}) { |m, d| m[d.name] = d; m }
       @static_validator = GraphQL::StaticValidation::Validator.new(schema: self)
       @middleware = []
       @query_analyzers = []
@@ -94,6 +98,15 @@ module GraphQL
       @query_execution_strategy = GraphQL::Execution::DeferredExecution
       @mutation_execution_strategy = GraphQL::Query::SerialExecution
       @subscription_execution_strategy = GraphQL::Query::SerialExecution
+    end
+
+    def directives=(directive_names)
+      ensure_defined
+      directive_names.each do |name|
+        dir = OPTIONAL_DIRECTIVES.fetch(name)
+        @directives[dir.name] = dir
+      end
+      @directives
     end
 
     def rescue_from(*args, &block)
